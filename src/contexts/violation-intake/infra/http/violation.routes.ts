@@ -35,9 +35,13 @@ const webhookSchema: FastifySchema = {
     },
     400: {
       type: 'object',
+      // Aceita ambos formatos: erros de validacao Zod (`errors`) e erros
+      // de parser/payload do Fastify (`error`).
       properties: {
         errors: { type: 'object', additionalProperties: true },
+        error: { type: 'string' },
       },
+      additionalProperties: true,
     },
   },
 };
