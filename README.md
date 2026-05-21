@@ -52,7 +52,7 @@ API em <http://localhost:3000> · Swagger UI em <http://localhost:3000/documenta
 ### Testar via Docker
 
 ```bash
-# Suite completa (43 testes)
+# Suite completa (47 testes)
 docker compose run --rm api npm run test
 
 # Lint (ESLint com complexidade ciclomática ≤ 6)
@@ -89,7 +89,7 @@ npm run start:worker
 ### Testar via npm
 
 ```bash
-npm run test            # 43 testes Vitest
+npm run test            # 47 testes Vitest
 npm run test:watch      # modo watch
 npm run test:coverage   # com coverage HTML em ./coverage/
 npm run lint            # ESLint
@@ -106,62 +106,101 @@ npm run quality         # lint + coverage
 
 Recebe notificação de violação e enfileira o job de takedown (idempotente por `tenantId+adId`).
 
+**Schema do payload**
+
+| Campo | Tipo | Validação |
+|---|---|---|
+| `adId` | string | obrigatório, não vazio |
+| `tenantId` | string | obrigatório, não vazio |
+| `violationType` | enum | `PROHIBITED_TERM \| BRAND_VIOLATION \| COMPLIANCE_FAIL` |
+| `severity` | enum | `LOW \| MEDIUM \| HIGH \| CRITICAL` |
+| `detectedAt` | string | ISO 8601 datetime com timezone |
+
+**Como testar (request + response capturados em execução real)**
+
+Request:
+
 ```bash
 curl -X POST http://localhost:3000/webhook/violation \
   -H "Content-Type: application/json" \
   -d '{
-    "adId": "ad_123",
-    "tenantId": "tenant_abc",
+    "adId": "ad_demo_001",
+    "tenantId": "tenant_demo",
     "violationType": "PROHIBITED_TERM",
     "severity": "HIGH",
-    "detectedAt": "2026-05-20T12:00:00.000Z"
+    "detectedAt": "2026-05-21T18:00:00.000Z"
   }'
 ```
 
-`violationType`: `PROHIBITED_TERM | BRAND_VIOLATION | COMPLIANCE_FAIL`
-`severity`: `LOW | MEDIUM | HIGH | CRITICAL`
-
-Resposta `202 Accepted`:
+Response — `202 Accepted`:
 
 ```json
-{ "jobId": "tenant_abc:ad_123", "status": "waiting" }
+{ "jobId": "tenant_demo:ad_demo_001", "status": "waiting" }
 ```
 
-Resposta `400 Bad Request` com payload inválido:
+**Testando o caminho de erro** — request com `adId` vazio, `violationType`/`severity` fora do enum e `detectedAt` inválido:
+
+```bash
+curl -X POST http://localhost:3000/webhook/violation \
+  -H "Content-Type: application/json" \
+  -d '{
+    "adId": "",
+    "tenantId": "tenant_demo",
+    "violationType": "INVALID",
+    "severity": "EXTREME",
+    "detectedAt": "not-iso"
+  }'
+```
+
+Response — `400 Bad Request` (payload real do Zod `flatten()`):
 
 ```json
-{ "errors": { "fieldErrors": { "adId": ["Required"] } } }
+{
+  "errors": {
+    "formErrors": [],
+    "fieldErrors": {
+      "adId": ["String must contain at least 1 character(s)"],
+      "violationType": ["Invalid enum value. Expected 'PROHIBITED_TERM' | 'BRAND_VIOLATION' | 'COMPLIANCE_FAIL', received 'INVALID'"],
+      "severity": ["Invalid enum value. Expected 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL', received 'EXTREME'"],
+      "detectedAt": ["Invalid datetime"]
+    }
+  }
+}
 ```
 
 ### GET /jobs/:id
 
+Request:
+
 ```bash
-curl http://localhost:3000/jobs/tenant_abc:ad_123
+curl http://localhost:3000/jobs/tenant_demo:ad_demo_001
 ```
 
-Resposta `200 OK`:
+Response — `200 OK` (job processado com sucesso):
 
 ```json
 {
-  "jobId": "tenant_abc:ad_123",
+  "jobId": "tenant_demo:ad_demo_001",
   "status": "completed",
   "attempts": 1,
   "result": {
     "success": true,
     "externalStatusCode": 200,
     "externalRequestUrl": "https://jsonplaceholder.typicode.com/posts/1",
-    "processedAt": "2026-05-20T14:04:00.000Z",
+    "processedAt": "2026-05-21T22:05:17.692Z",
     "message": "Takedown request processed successfully"
   },
   "error": null
 }
 ```
 
-Resposta `404 Not Found`:
+Response — `404 Not Found`:
 
 ```json
 { "error": "Job not found" }
 ```
+
+**Estados possíveis de `status`**: `waiting`, `active`, `completed`, `failed`, `delayed` (vindo direto do BullMQ).
 
 ### Swagger UI
 
