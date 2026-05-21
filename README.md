@@ -24,9 +24,14 @@ Cada contexto segue o mesmo formato: `domain/` (tipos), `application/` (ports + 
 
 ## Pré-requisitos
 
-Apenas Docker e Docker Compose. **Não é necessário rodar `npm install` localmente** — as dependências são instaladas dentro da imagem (`Dockerfile` → `npm ci`).
+Escolha **uma** das opções abaixo:
 
-## Como rodar
+- **Opção A — Apenas Docker** (recomendada): Docker + Docker Compose. Nada precisa ser instalado no host.
+- **Opção B — npm direto**: Node.js 20+ no host. Redis pode ser rodado via Docker (`docker compose up redis`) ou local.
+
+---
+
+## Opção A — Rodar com Docker (recomendada)
 
 ```bash
 # Sobe Redis, API e Worker
@@ -44,10 +49,10 @@ docker compose down
 
 API em <http://localhost:3000> · Swagger UI em <http://localhost:3000/documentation>.
 
-## Como testar
+### Testar via Docker
 
 ```bash
-# Suite completa de testes (24 testes)
+# Suite completa (43 testes)
 docker compose run --rm api npm run test
 
 # Lint (ESLint com complexidade ciclomática ≤ 6)
@@ -57,11 +62,49 @@ docker compose run --rm api npm run lint
 docker compose run --rm api npm run quality
 ```
 
+---
+
+## Opção B — Rodar com npm
+
+```bash
+# 1. Instalar dependências
+npm install
+
+# 2. Subir só o Redis via Docker (única dependência externa)
+docker compose up -d redis
+
+# 3. Variáveis de ambiente (.env já vai por defaults em dev)
+cp .env.example .env
+
+# 4. API e Worker em terminais separados
+npm run dev:api     # tsx watch — recarrega ao salvar
+npm run dev:worker
+
+# Build de produção
+npm run build
+npm run start:api   # node dist/main/api.js
+npm run start:worker
+```
+
+### Testar via npm
+
+```bash
+npm run test            # 43 testes Vitest
+npm run test:watch      # modo watch
+npm run test:coverage   # com coverage HTML em ./coverage/
+npm run lint            # ESLint
+npm run typecheck       # tsc --noEmit em todo o projeto
+npm run build           # tsc -p tsconfig.build.json (emite dist/)
+npm run quality         # lint + coverage
+```
+
+---
+
 ## Endpoints
 
 ### POST /webhook/violation
 
-Recebe notificação de violação e enfileira o job de takedown (idempotente por `tenantId__adId`).
+Recebe notificação de violação e enfileira o job de takedown (idempotente por `tenantId+adId`).
 
 ```bash
 curl -X POST http://localhost:3000/webhook/violation \
@@ -124,11 +167,11 @@ Resposta `404 Not Found`:
 
 Documentação interativa em <http://localhost:3000/documentation>.
 
-> **Nota:** o Swagger UI já vem embutido — você pode testar os dois endpoints diretamente do navegador, sem precisar de Postman, Insomnia ou qualquer outro client HTTP. Basta subir o `docker compose up` e abrir a URL.
+> **Nota:** o Swagger UI já vem embutido — você pode testar os dois endpoints diretamente do navegador, sem precisar de Postman, Insomnia ou qualquer outro client HTTP. Basta subir a stack e abrir a URL.
 
 ## Configuração (.env)
 
-Em desenvolvimento o `docker-compose.yml` já fornece todas as variáveis. Em `NODE_ENV=production` **não há defaults** — qualquer variável faltando aborta o boot.
+Em desenvolvimento o `docker-compose.yml` já fornece todas as variáveis (ou use `cp .env.example .env` se for rodar via npm). Em `NODE_ENV=production` **não há defaults** — qualquer variável faltando aborta o boot.
 
 | Variável | Obrigatória em prod | Padrão (dev) |
 |---|---|---|
