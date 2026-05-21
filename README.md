@@ -12,15 +12,118 @@ Mini-API assíncrona para recebimento de violações e processamento de takedown
 - Pino (logs estruturados)
 - Vitest
 
-## Estrutura
+## Estrutura do projeto
 
-Monólito modular com 3 bounded contexts:
+Monólito modular Node.js + TypeScript com **3 bounded contexts** isolados. Cada contexto segue **Ports & Adapters** (Hexagonal): `domain/` (tipos puros), `application/` (ports + use cases) e `infra/` (adapters concretos — Fastify, BullMQ, undici).
 
-- `violation-intake` — recebe e valida o webhook de violação.
-- `takedown-execution` — enfileira e processa jobs via worker.
-- `job-monitoring` — expõe o status atual de um job.
+### Mapa completo
 
-Cada contexto segue o mesmo formato: `domain/` (tipos), `application/` (ports + use cases) e `infra/` (Fastify, BullMQ, undici).
+```
+FURY Takedown API/
+├── docker-compose.yml          # Stack: api + worker + redis (healthcheck)
+├── Dockerfile                  # Imagem única para api e worker
+├── .dockerignore               # Impede node_modules do host vazar pro build
+├── .env.example                # Variáveis de ambiente (defaults só em dev)
+├── eslint.config.js            # Complexidade ciclomática ≤6, sem `any`
+├── tsconfig.json               # TS estrito (cobre src + tests)
+├── tsconfig.build.json         # Build de produção (exclui tests)
+├── vitest.config.ts            # Config dos testes
+│
+├── src/
+│   ├── main/                                  # Entry points (DI + bootstrap)
+│   │   ├── api.ts                             # Fastify + Swagger + rotas
+│   │   └── worker.ts                          # Worker BullMQ (processo separado)
+│   │
+│   ├── contexts/                              # Bounded contexts (1 pasta = 1 responsabilidade)
+│   │   │
+│   │   ├── violation-intake/                  # CONTEXTO 1: recebe webhook
+│   │   │   ├── domain/schemas/                #   tipos puros (Zod schema)
+│   │   │   ├── application/                   #   regras de negócio
+│   │   │   │   ├── ports/                     #     interfaces de saída
+│   │   │   │   └── use-cases/                 #     ReceiveViolationUseCase
+│   │   │   └── infra/http/                    #   adapter Fastify (controller + routes)
+│   │   │
+│   │   ├── takedown-execution/                # CONTEXTO 2: enfileira + processa
+│   │   │   ├── domain/types/                  #   TakedownResult
+│   │   │   ├── application/
+│   │   │   │   ├── ports/                     #     TakedownQueue, ExternalTakedownGateway
+│   │   │   │   └── use-cases/                 #     EnqueueTakedown + ProcessTakedown
+│   │   │   └── infra/
+│   │   │       ├── gateways/                  #   adapter HTTP externo (JSONPlaceholder)
+│   │   │       └── queue/                     #   adapter BullMQ + worker
+│   │   │
+│   │   └── job-monitoring/                    # CONTEXTO 3: consulta status
+│   │       ├── application/
+│   │       │   ├── ports/                     #     JobStatusReader
+│   │       │   └── use-cases/                 #     GetJobStatusUseCase
+│   │       └── infra/
+│   │           ├── http/                      #   GET /jobs/:id
+│   │           └── queue/                     #   leitor BullMQ
+│   │
+│   └── shared/                                # Cross-cutting (NÃO domínio)
+│       ├── config/env.ts                      # Env validado com Zod
+│       ├── errors/                            # AppError + error handler global
+│       ├── http/                              # HttpClient (port) + UndiciHttpClient (adapter)
+│       └── queue/                             # Conexão Redis + factory da Queue
+│
+├── tests/
+│   ├── unit/                                  # Testes unitários (mocks)
+│   │   ├── violation-intake/
+│   │   ├── takedown-execution/
+│   │   ├── job-monitoring/
+│   │   └── shared/
+│   └── integration/http/routes.test.ts        # Testes HTTP (Fastify inject)
+│
+└── docs/
+    ├── adr/                                   # Architecture Decision Records
+    │   ├── 0001-...modular-monolith...md
+    │   ├── 0002-...bullmq-redis...md
+    │   ├── 0003-...zod-for-boundary...md
+    │   ├── 0004-...jobid-for-idempotency...md
+    │   ├── 0005-...vitest...md
+    │   └── 0006-...cyclomatic-complexity...md
+    └── bdd/                                   # Especificações Gherkin por contexto
+        ├── violation-intake.feature
+        ├── takedown-execution.feature
+        └── job-monitoring.feature
+```
+
+### Convenção de camadas (igual em todos os contextos)
+
+| Camada | Conhece | Não conhece | Exemplo |
+|---|---|---|---|
+| `domain/` | nada externo | tudo | `violation.schema.ts` |
+| `application/ports/` | só tipos do `domain/` | infraestrutura | `TakedownQueue` (interface) |
+| `application/use-cases/` | ports + domain | Fastify, BullMQ, undici | `ProcessTakedownUseCase` |
+| `infra/` | tudo de fora + ports | — | `BullMqTakedownQueue` |
+
+**Regra de ouro:** dependências sempre apontam **pra dentro** (`infra → application → domain`). Isso permite trocar BullMQ por SQS, JSONPlaceholder pela Meta API real, ou Fastify por Express — sem tocar use case nem domain.
+
+### Por onde o avaliador deve começar
+
+Ordem recomendada de leitura (15 min cobrem o projeto inteiro):
+
+1. **`src/main/api.ts`** — DI explícita, mostra como os 3 contextos se conectam.
+2. **`src/contexts/violation-intake/domain/schemas/violation.schema.ts`** — contrato do webhook (Zod).
+3. **`src/contexts/violation-intake/infra/http/violation.controller.ts`** — fluxo: parse Zod → use case → 202.
+4. **`src/contexts/takedown-execution/infra/queue/BullMqTakedownQueue.ts`** — idempotência + retry/backoff.
+5. **`src/contexts/takedown-execution/infra/queue/takedown.worker.ts`** — worker "burro" delega ao use case.
+6. **`src/contexts/job-monitoring/infra/queue/BullMqJobStatusReader.ts`** — mapeia estado BullMQ → resposta da spec.
+7. **`docs/adr/`** — justificativa de cada decisão arquitetural.
+
+### Onde está o quê (índice rápido por requisito do desafio)
+
+| Requisito do sprint | Arquivo principal |
+|---|---|
+| Webhook + validação Zod | `src/contexts/violation-intake/infra/http/violation.controller.ts` |
+| Schema do payload | `src/contexts/violation-intake/domain/schemas/violation.schema.ts` |
+| Enfileiramento BullMQ | `src/contexts/takedown-execution/infra/queue/BullMqTakedownQueue.ts` |
+| Retry `attempts:3` + backoff exponencial | `BullMqTakedownQueue.ts` linhas 4-5, 60-61 |
+| Idempotência `tenantId+adId` | `BullMqTakedownQueue.ts` (`buildJobId`) |
+| Worker + chamada HTTP externa | `src/contexts/takedown-execution/infra/queue/takedown.worker.ts` + `infra/gateways/JsonPlaceholderTakedownGateway.ts` |
+| GET /jobs/:id | `src/contexts/job-monitoring/infra/http/jobs.controller.ts` |
+| Timeout HTTP tratado como retriável | `src/shared/http/UndiciHttpClient.ts` |
+
 
 ## Pré-requisitos
 
