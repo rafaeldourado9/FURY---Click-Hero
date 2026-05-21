@@ -1,0 +1,41 @@
+{
+  "name": "fury-takedown-api",
+  "version": "1.0.0",
+  "description": "FURY Takedown API - Mini-API assíncrona para processamento de violações",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev:api": "tsx watch src/main/api.ts",
+    "dev:worker": "tsx watch src/main/worker.ts",
+    "start:api": "node dist/main/api.js",
+    "start:worker": "node dist/main/worker.js",
+    "lint": "eslint src tests",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "quality": "npm run lint && npm run test:coverage"
+  },
+  "dependencies": {
+    "@fastify/swagger": "^8.15.0",
+    "@fastify/swagger-ui": "^4.2.0",
+    "bullmq": "^5.0.0",
+    "fastify": "^4.29.0",
+    "ioredis": "^5.0.0",
+    "pino": "^9.0.0",
+    "undici": "^6.0.0",
+    "zod": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.0.0",
+    "nock": "^13.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
