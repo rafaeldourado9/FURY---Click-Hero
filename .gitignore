@@ -1,6 +1,11 @@
 node_modules/
 dist/
 coverage/
+# Artefatos de build que possam vazar dentro de tests/
+tests/**/*.js
+tests/**/*.js.map
+tests/**/*.d.ts
+tests/**/*.d.ts.map
 .env
 .env.local
 .env.*.local
