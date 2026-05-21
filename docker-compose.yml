@@ -1,0 +1,48 @@
+services:
+  api:
+    build: .
+    command: npm run dev:api
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      LOG_LEVEL: info
+      BODY_LIMIT_BYTES: 65536
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      EXTERNAL_TAKEDOWN_URL: https://jsonplaceholder.typicode.com/posts/1
+      HTTP_TIMEOUT_MS: 5000
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  worker:
+    build: .
+    command: npm run dev:worker
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: info
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      EXTERNAL_TAKEDOWN_URL: https://jsonplaceholder.typicode.com/posts/1
+      HTTP_TIMEOUT_MS: 5000
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
