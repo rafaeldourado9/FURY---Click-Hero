@@ -52,6 +52,12 @@ const buildApp = async (): Promise<FastifyInstance> => {
   const app = Fastify({
     logger: { level: env.LOG_LEVEL },
     bodyLimit: env.BODY_LIMIT_BYTES,
+    // O AJV padrão do Fastify vem com `coerceTypes: 'array'` ativo, que
+    // converte silenciosamente number→string, string→number, etc., antes
+    // do validador rodar. Isso burlaria o Zod no controller (ex.: `adId:
+    // 123` viraria `"123"`). Desligamos a coerção aqui para que o Zod
+    // permaneça como único validador de tipo efetivo.
+    ajv: { customOptions: { coerceTypes: false } },
   });
   app.setErrorHandler(errorHandler);
 
